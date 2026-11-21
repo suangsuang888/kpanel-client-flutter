@@ -1,0 +1,109 @@
+name: Build Android APK and Windows App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform (keep our lib/ and pubspec)
+        run: |
+          mkdir -p /tmp/keep
+          cp -r lib /tmp/keep/lib
+          cp pubspec.yaml /tmp/keep/pubspec.yaml
+          cp analysis_options.yaml /tmp/keep/analysis_options.yaml
+          flutter create --platforms=android --project-name kpanel_client --org com.suangsuang .
+          rm -rf lib
+          cp -r /tmp/keep/lib lib
+          cp /tmp/keep/pubspec.yaml pubspec.yaml
+          cp /tmp/keep/analysis_options.yaml analysis_options.yaml
+
+      - name: Set compileSdk 36 (required by newer plugins)
+        run: |
+          GRADLE=android/app/build.gradle.kts
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$GRADLE"
+          grep -n compileSdk "$GRADLE"
+
+      - name: Add INTERNET permission for release build
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$MANIFEST"
+          fi
+          grep -n INTERNET "$MANIFEST"
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpanel-client-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Windows platform (keep our lib/ and pubspec)
+        shell: pwsh
+        run: |
+          $keep = "$env:TEMP\keep"
+          New-Item -ItemType Directory -Force -Path $keep | Out-Null
+          Copy-Item -Recurse lib "$keep\lib"
+          Copy-Item pubspec.yaml "$keep\pubspec.yaml"
+          Copy-Item analysis_options.yaml "$keep\analysis_options.yaml"
+          flutter create --platforms=windows --project-name kpanel_client --org com.suangsuang .
+          Remove-Item -Recurse -Force lib
+          Copy-Item -Recurse "$keep\lib" lib
+          Copy-Item "$keep\pubspec.yaml" pubspec.yaml -Force
+          Copy-Item "$keep\analysis_options.yaml" analysis_options.yaml -Force
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release Windows app
+        run: flutter build windows --release
+
+      - name: Zip Windows release folder
+        shell: pwsh
+        run: |
+          $src = "build\windows\x64\runner\Release"
+          Compress-Archive -Path "$src\*" -DestinationPath "kpanel-client-windows.zip" -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpanel-client-windows
+          path: kpanel-client-windows.zip
+          if-no-files-found: error
