@@ -95,6 +95,23 @@ jobs:
           Copy-Item "$keep\pubspec.yaml" pubspec.yaml -Force
           Copy-Item "$keep\analysis_options.yaml" analysis_options.yaml -Force
 
+      - name: Silence experimental coroutine deprecation (new MSVC vs plugin)
+        shell: pwsh
+        run: |
+          $cmake = "windows\CMakeLists.txt"
+          $lines = Get-Content $cmake
+          $out = @()
+          $inserted = $false
+          foreach ($line in $lines) {
+            $out += $line
+            if (-not $inserted -and $line -match "^\s*project\(") {
+              $out += "add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)"
+              $inserted = $true
+            }
+          }
+          Set-Content $cmake $out
+          Select-String -Path $cmake -Pattern "SILENCE_EXPERIMENTAL"
+
       - name: Get dependencies
         run: flutter pub get
 
