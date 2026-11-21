@@ -91,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : ListView.separated(
                   padding: EdgeInsets.all(12),
                   itemCount: _servers.length,
-                  separatorBuilder: (_, _) => SizedBox(height: 8),
+                  separatorBuilder: (context, index) => SizedBox(height: 8),
                   itemBuilder: (context, i) {
                     final s = _servers[i];
                     return Card(
